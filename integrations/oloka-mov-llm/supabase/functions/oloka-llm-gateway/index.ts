@@ -42,7 +42,7 @@ function payload(input: Dict, previous?: Connection): Dict {
 }
 async function body(req: Request): Promise<Dict> {
   const size = Number(req.headers.get("content-length") ?? 0);
-  if (size > 12000) throw new Error("Request is too large");
+  if (size > 32000) throw new Error("Request is too large");
   const val = await req.json();
   if (!val || Array.isArray(val) || typeof val !== "object") throw new Error("JSON object expected");
   return val as Dict;
@@ -98,22 +98,22 @@ async function discover(conn: Connection) {
   return rows.map((x: Dict) => typeof x.id === "string" ? x.id : typeof x.name === "string" ? x.name.replace(/^models\//, "") : "").filter((x: string) => modelPattern.test(x)).slice(0, 100);
 }
 type Message = { role: string; content: string };
-async function complete(conn: Connection, model: string, messages: Message[]): Promise<string> {
+async function complete(conn: Connection, model: string, messages: Message[], maxTokens = 48): Promise<string> {
   const key = await apiKey(conn);
   const headers = { ...providerHeaders(conn, key), "Content-Type": "application/json" };
   let path = conn.chat_path;
   let payload: Dict;
   if (conn.protocol === "anthropic_messages") {
     const system = messages.filter(x => x.role === "system").map(x => x.content).join("\n");
-    payload = { model, max_tokens: 48, messages: messages.filter(x => x.role !== "system").map(x => ({ role: x.role, content: x.content })) };
+    payload = { model, max_tokens: maxTokens, messages: messages.filter(x => x.role !== "system").map(x => ({ role: x.role, content: x.content })) };
     if (system) payload.system = system;
   } else if (conn.protocol === "gemini_generate") {
     path = path.replace("{model}", encodeURIComponent(model));
-    payload = { contents: messages.filter(x => x.role !== "system").map(x => ({ role: x.role === "assistant" ? "model" : "user", parts: [{ text: x.content }] })), generationConfig: { maxOutputTokens: 48 } };
+    payload = { contents: messages.filter(x => x.role !== "system").map(x => ({ role: x.role === "assistant" ? "model" : "user", parts: [{ text: x.content }] })), generationConfig: { maxOutputTokens: maxTokens } };
     const system = messages.filter(x => x.role === "system").map(x => x.content).join("\n");
     if (system) payload.systemInstruction = { parts: [{ text: system }] };
   } else {
-    payload = { model, messages, max_tokens: 48, stream: false };
+    payload = { model, messages, max_tokens: maxTokens, stream: false };
   }
   const response = await remoteRequest(remoteUrl(conn, path), { method: "POST", headers, body: JSON.stringify(payload) });
   if (!response.ok) throw new Error("LLM request returned HTTP " + response.status);
@@ -131,7 +131,7 @@ async function complete(conn: Connection, model: string, messages: Message[]): P
     answer = typeof message?.content === "string" ? message.content : "";
   }
   if (!answer.trim()) throw new Error("Provider returned no text content");
-  return answer.slice(0, 5000);
+  return answer.slice(0, 20000);
 }
 async function testModel(conn: Connection, model: string) {
   if (!modelPattern.test(model)) throw new Error("Invalid model ID");
@@ -224,15 +224,16 @@ Deno.serve(async (req: Request) => {
       const { data: chosen } = await db.from("mov_llm_connection_models").select("enabled").eq("connection_id", id).eq("api_model", model).maybeSingle();
       if (!conn.enabled || !chosen?.enabled) return fail("Test and enable this connection/model first", 409);
       const msgs = b.messages;
-      if (!Array.isArray(msgs) || msgs.length < 1 || msgs.length > 12) return fail("1–12 messages required");
+      if (!Array.isArray(msgs) || msgs.length < 1 || msgs.length > 24) return fail("1–24 messages required");
       let total = 0;
       const messages: Message[] = msgs.map((m: Dict) => {
         if (!m || !["system","user","assistant"].includes(String(m.role)) || typeof m.content !== "string") throw new Error("Invalid chat message");
         total += m.content.length;
         return { role: String(m.role), content: m.content };
       });
-      if (total > 6000) return fail("Message size limit exceeded");
-      return json({ text: await complete(conn, model, messages), model, connection_id: id });
+      if (total > 24000) return fail("Message size limit exceeded");
+      const maxTokens = Math.min(2048, Math.max(32, Number(b.max_tokens) || 768));
+      return json({ text: await complete(conn, model, messages, maxTokens), model, connection_id: id });
     }
     return fail("Endpoint not found", 404);
   } catch (err) {
