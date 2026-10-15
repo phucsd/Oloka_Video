@@ -139,7 +139,7 @@ async function testModel(conn: Connection, model: string) {
   if (!row) throw new Error("Add the model before testing it");
   const started = Date.now();
   try {
-    const answer = await complete(conn, model, [{ role: "user", content: "Reply with the single word OK." }]);
+    const answer = await complete(conn, model, [{ role: "user", content: "Reply with the single word OK." }], 256);
     const at = new Date().toISOString();
     await db.from("mov_llm_connection_models").update({ enabled: true, last_verified_at: at, last_test_status: "ok" }).eq("id", row.id);
     await db.from("mov_llm_connections").update({ enabled: true, last_verified_at: at, last_test_status: "ok", last_error: null }).eq("id", conn.id);
