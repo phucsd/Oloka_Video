@@ -208,8 +208,15 @@ Deno.serve(async (req: Request) => {
       const model = String(b.model || "").trim();
       if (!modelPattern.test(model)) return fail("Model ID must be 1–128 characters (letters, numbers, . _ : / -)");
       const label = String(b.label || model).trim().slice(0,100);
-      const { error } = await db.from("mov_llm_connection_models").upsert({ connection_id: id, api_model: model, label, enabled: false }, { onConflict: "connection_id,api_model" });
+      const { error } = await db.from("mov_llm_connection_models").upsert({ connection_id: id, api_model: model, label, enabled: false }, { onConflict: "connection_id,api_model", ignoreDuplicates: true });
       if (error) return fail("Could not save model", 500);
+      return json({ ok: true });
+    }
+    if (action.startsWith("models/") && req.method === "DELETE") {
+      const modelId = action.slice("models/".length);
+      if (!idPattern.test(modelId)) return fail("Invalid model ID");
+      const { error } = await db.from("mov_llm_connection_models").delete().eq("connection_id", id).eq("id", modelId);
+      if (error) return fail("Could not delete model", 500);
       return json({ ok: true });
     }
     if (action === "discover" && req.method === "POST") return json({ models: await discover(conn) });
