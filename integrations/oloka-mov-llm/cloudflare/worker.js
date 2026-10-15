@@ -12,6 +12,7 @@ export default {
    const response = await fetch(target, {method:request.method,headers,body:["GET","HEAD"].includes(request.method)?undefined:request.body,redirect:"manual"});
    return new Response(response.body,{status:response.status,headers:{"Content-Type":response.headers.get("Content-Type")||"application/json","Cache-Control":"no-store","X-Content-Type-Options":"nosniff"}});
   }
+  if (incoming.pathname === "/favicon.ico") return new Response(null,{status:204});
   if (incoming.pathname !== "/" && incoming.pathname !== "/index.html") return new Response("Not found",{status:404});
   return new Response(HTML,{status:200,headers:{"Content-Type":"text/html; charset=utf-8","Cache-Control":"no-store","X-Content-Type-Options":"nosniff","Referrer-Policy":"no-referrer","X-Frame-Options":"DENY","Content-Security-Policy":"default-src 'none'; script-src 'unsafe-inline' https://esm.sh; style-src 'unsafe-inline'; connect-src 'self' https://dbyfgbenzmpfqyaisrgr.supabase.co; img-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"}});
  }
